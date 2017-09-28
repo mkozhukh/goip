@@ -13,7 +13,7 @@ import (
 //GoIP is a core object of this package
 //You can use Connect function to get the instance
 type GoIP struct {
-	HttpAuth string
+	httpAuth string
 }
 
 //ResponseNames contains names of object in different languages
@@ -32,14 +32,14 @@ type ResponseNames struct {
 type ResponseContinent struct {
 	Names     ResponseNames
 	Code      string
-	GeonameId int `json:"geoname_id"`
+	GeonameID int `json:"geoname_id"`
 }
 
 //ResponseCountry contains information about a single country
 type ResponseCountry struct {
 	Confidence int    `json:"confidence"`
 	IsoCode    string `json:"iso_code"`
-	GeonameId  int    `json:"geoname_id"`
+	GeonameID  int    `json:"geoname_id"`
 	Names      ResponseNames
 }
 
@@ -57,60 +57,70 @@ type Response struct {
 	MaxMind           ResponseInfo
 }
 
-//Connect takes name and license of GeoIp user
+//New takes name and license of GeoIp user
 //It returns GoIP object that can be used for further information retrieving
-func Connect(user string, pass string) *GoIP {
+func New(user string, pass string) *GoIP {
 	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
-	return &GoIP{HttpAuth: auth}
+	return &GoIP{auth}
 }
 
-//countryURL points to the URL of GeoIP service
-const countryURL = "https://geoip.maxmind.com/geoip/v2.1/country/"
-
-//countryInfo method sends request to the GeoIP service and
-//returns all info about the IP address
-func (m *GoIP) countryInfo(ip string) (Response, error) {
-	req, err := http.NewRequest("GET", countryURL+ip, nil)
+//method sends request to the GeoIP service and
+//returns country-level info about the IP address
+func (m *GoIP) info(ip string) (*Response, error) {
 	response := Response{}
 
-	if err == nil {
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("Accept-Charset", "UTF-8")
-		req.Header.Set("Authorization", "Basic "+m.HttpAuth)
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-
-		if err == nil {
-			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
-
-			if err == nil {
-				err = json.Unmarshal(body, &response)
-			}
-		}
+	req, err := http.NewRequest("GET", "https://geoip.maxmind.com/geoip/v2.1/country/"+ip, nil)
+	if err != nil {
+		return nil, err
 	}
 
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Charset", "UTF-8")
+	req.Header.Set("Authorization", "Basic "+m.httpAuth)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return nil, err
+	}
 	if response.Error != "" {
-		err = errors.New(response.Error)
+		return nil, errors.New(response.Error)
 	}
 
-	return response, err
-
+	return &response, nil
 }
 
 //Country method retrieves info about IP address
 //and returns the Country structure with information about the related Country
-func (m *GoIP) Country(ip string) (ResponseCountry, error) {
-	info, err := m.countryInfo(ip)
-	return info.Country, err
+func (m *GoIP) Country(ip string) (*ResponseCountry, error) {
+	info, err := m.info(ip)
+	if err != nil {
+		return nil, err
+	}
+
+	return &info.Country, err
 }
 
 //Continent method retrieves info about IP address
 //and returns the Continent structure with information about the related continent
-func (m *GoIP) Continent(ip string) (ResponseContinent, error) {
-	info, err := m.countryInfo(ip)
-	return info.Continent, err
+func (m *GoIP) Continent(ip string) (*ResponseContinent, error) {
+	info, err := m.info(ip)
+	if err != nil {
+		return nil, err
+	}
+
+	return &info.Continent, err
 }
 
 //ContinentName method returns English name of continent by IP
@@ -123,7 +133,7 @@ func (m *GoIP) ContinentName(ip string) (string, error) {
 	return "", err
 }
 
-//ContinentName method returns English name of country by IP
+//CountryName method returns English name of country by IP
 func (m *GoIP) CountryName(ip string) (string, error) {
 	country, err := m.Country(ip)
 	if err == nil {
